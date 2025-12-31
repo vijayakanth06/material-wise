@@ -1,0 +1,55 @@
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f6f8;
+}
+
+.container {
+    max-width: 700px;
+    margin: auto;
+    padding: 30px;
+}
+
+h1 {
+    text-align: center;
+}
+
+.subtitle {
+    text-align: center;
+    color: #555;
+}
+
+form {
+    margin-top: 20px;
+    text-align: center;
+}
+
+select, button {
+    padding: 10px;
+    margin-top: 10px;
+    width: 100%;
+}
+
+button {
+    background: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+.card {
+    background: white;
+    margin-top: 30px;
+    padding: 20px;
+    border-radius: 8px;
+}
+
+pre {
+    background: #f1f1f1;
+    padding: 10px;
+    white-space: pre-wrap;
+}
+
+.sources a {
+    color: #007bff;
+    text-decoration: none;
+}

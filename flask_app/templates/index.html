@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Material Wise – AI Procurement Assistant</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="container">
+    <h1>Material Wise</h1>
+    <p class="subtitle">AI-assisted construction material procurement</p>
+
+    <form method="POST">
+        <label>Select Construction Material</label>
+        <select name="product" required>
+            <option value="">-- Select --</option>
+            {% for m in materials %}
+                <option value="{{ m }}">{{ m }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit">Analyze</button>
+    </form>
+
+    {% if result %}
+<div class="card">
+  <h2>{{ result.product }}</h2>
+
+  <div class="badges">
+    <span class="badge up">{{ result.trend }}</span>
+    <span class="badge">{{ result.confidence }} confidence</span>
+    <span class="badge">{{ result.climate }} climate risk</span>
+  </div>
+
+  <h3>Market Price (Indicative)</h3>
+  {% if result.market %}
+    <p>
+      {{ result.market.unit }} :
+      ₹{{ result.market.min }} – ₹{{ result.market.max }}
+      (Median ₹{{ result.market.median }})
+    </p>
+  {% else %}
+    <p class="muted">Market price unavailable</p>
+  {% endif %}
+
+  <h3>AI Recommendation</h3>
+  <pre>{{ result.explanation }}</pre>
+
+  <h3>Sources</h3>
+  <ul class="sources">
+    {% for s in result.sources %}
+      <li>
+        🔗 <a href="{{ s.url }}" target="_blank">{{ s.label }}</a>
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+</div>
+
+</body>
+</html>

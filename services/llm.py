@@ -4,49 +4,42 @@ from dotenv import load_dotenv
 
 load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
 def llm_reasoning(data):
-    """
-    Uses Groq streaming API to generate a procurement recommendation.
-    Returns full text response.
-    """
-
     prompt = f"""
-You are an AI advisor for construction material procurement.
+You are an AI advisor for construction procurement.
 
+Respond in the following structure ONLY:
+
+DECISION:
+BUY / WAIT / BULK BUY
+
+WHY:
+- Bullet points (max 4)
+
+RISKS:
+- Bullet points (max 3)
+
+Context:
 Product: {data['product']}
-Historical Price Trend: {data['trend']}
-Prediction Confidence: {data['confidence']}
-Climate / Rainfall Risk: {data['climate']}
-Market Price Range: ₹{data['min']} – ₹{data['max']}
-
-Task:
-- Recommend BUY / WAIT / BULK BUY
-- Explain reasoning in 4–5 lines
-- Mention risks and uncertainty clearly
+Trend: {data['trend']}
+Confidence: {data['confidence']}
+Climate Risk: {data['climate']}
+Market Price Range: {data['min']} – {data['max']}
 """
 
     completion = client.chat.completions.create(
         model="openai/gpt-oss-120b",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        temperature=0.6,
-        top_p=1,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
         reasoning_effort="medium",
-        max_completion_tokens=400,
+        max_completion_tokens=350,
         stream=True
     )
 
-    final_response = []
-
+    chunks = []
     for chunk in completion:
         if chunk.choices and chunk.choices[0].delta:
-            token = chunk.choices[0].delta.content
-            if token:
-                final_response.append(token)
+            if chunk.choices[0].delta.content:
+                chunks.append(chunk.choices[0].delta.content)
 
-    return "".join(final_response).strip()
+    return "".join(chunks).strip()
