@@ -45,18 +45,39 @@
   <h3>AI Recommendation</h3>
   <pre>{{ result.explanation }}</pre>
 
-  <h3>Sources</h3>
-  <ul class="sources">
-    {% for s in result.sources %}
-      <li>
-        🔗 <a href="{{ s.url }}" target="_blank">{{ s.label }}</a>
-      </li>
-    {% endfor %}
-  </ul>
-</div>
-{% endif %}
+    <h3>Sources Evidence</h3>
+<ul class="sources">
+
+  <li>
+    📊
+    <a href="https://www.mospi.gov.in/web/mospi/wholesale-price-index"
+       target="_blank">
+       MOSPI – Wholesale Price Index (Metals)
+    </a>
+  </li>
+
+  {% if result.market and result.market.source_url %}
+  <li>
+    🏗️
+    <a href="{{ result.market.source_url }}" target="_blank">
+      IndiaMART – Live listings for {{ result.product }}
+    </a>
+  </li>
+  {% endif %}
+
+  <li>
+    🌧️
+    <a href="https://open-meteo.com/en/docs"
+       target="_blank">
+       Open-Meteo – Rainfall anomaly API
+    </a>
+  </li>
+
+</ul>
 
 </div>
+    {% endif %}
 
+</div>
 </body>
 </html>

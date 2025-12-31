@@ -1,18 +1,8 @@
 import requests, re, numpy as np
 from bs4 import BeautifulSoup
-
-# Expected price ranges (₹) to eliminate garbage
-EXPECTED_RANGES = {
-    "steel": (30000, 90000),   # per tonne
-    "iron": (30000, 90000),
-    "bars": (30000, 90000),
-    "rods": (30000, 90000),
-    "blooms": (25000, 80000),
-}
-
 def scrape_indiamart_prices(product):
     query = product.replace(" ", "-").lower()
-    url = f"https://dir.indiamart.com/impcat/{query}.html"
+    url = f"https://dir.indiamart.com/search.mp?ss={query}"
 
     headers = {"User-Agent": "Mozilla/5.0"}
     prices = []
@@ -23,30 +13,33 @@ def scrape_indiamart_prices(product):
 
         for tag in soup.find_all(text=re.compile(r"₹")):
             nums = re.findall(r"\d{3,6}", tag)
-            for n in nums:
-                prices.append(int(n))
+            prices.extend(int(n) for n in nums)
+
     except Exception:
-        return None
+        pass
 
-    if not prices:
-        return None
+    # HARD RULE: if prices unreliable → return None
+    if len(prices) < 3:
+        return {
+            "status": "unavailable",
+            "reason": "Most listings show 'Ask Price' or negotiated pricing.",
+            "source_url": url
+        }
 
-    # Infer range
-    low, high = 0, 1e9
-    for k, (l, h) in EXPECTED_RANGES.items():
-        if k in product.lower():
-            low, high = l, h
-            break
-
-    filtered = [p for p in prices if low <= p <= high]
+    filtered = [p for p in prices if 20000 <= p <= 100000]
 
     if len(filtered) < 3:
-        return None
+        return {
+            "status": "unavailable",
+            "reason": "Prices vary widely; not reliable for aggregation.",
+            "source_url": url
+        }
 
     return {
+        "status": "available",
         "min": min(filtered),
         "max": max(filtered),
         "median": int(np.median(filtered)),
-        "variance": float(np.var(filtered) / (np.mean(filtered) ** 2)),
-        "unit": "₹/tonne"
+        "unit": "₹/tonne",
+        "source_url": url
     }

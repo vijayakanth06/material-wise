@@ -10,12 +10,17 @@ from services.confidence import confidence_score
 from services.llm import llm_reasoning
 
 app = Flask(__name__)
+
+
 import logging
 log = logging.getLogger('werkzeug')
 class Ignore404(logging.Filter):
     def filter(self, record):
         return '404' not in record.getMessage()
 log.addFilter(Ignore404())
+
+
+
 DATA_PATH = "data/price_index.csv"
 
 # Load once for dropdown
@@ -61,27 +66,34 @@ def index():
         trend, model_prob = predict_trend(X_latest)
         climate_score, climate_label = rainfall_risk_tn()
 
-        market = scrape_indiamart_prices(product) or {
-            "min": 0,
-            "max": 0,
-            "median": 0,
-            "variance": 0.5
-        }
+        market = scrape_indiamart_prices(product)
+
+        market_text = "Market price data unavailable"
+        market_variance = 0.6  # penalize confidence by default
+
+        if market["status"] == "available":
+            market_text = f"{market['unit']} {market['min']} – {market['max']}"
+            market_variance = market["variance"]
+        else:
+            # Penalize confidence due to lack of price transparency
+            market_variance = 0.6
 
         conf_score, conf_label = confidence_score(
             model_prob,
-            market["variance"],
+            market_variance,
             climate_score
         )
+
 
         explanation = llm_reasoning({
             "product": product,
             "trend": trend,
             "confidence": conf_label,
             "climate": climate_label,
-            "min": market["min"],
-            "max": market["max"]
+            "market_status": market["status"],
+            "market_text": market_text
         })
+
 
         result = {
             "product": product,
