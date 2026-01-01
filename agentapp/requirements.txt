@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+requests
+beautifulsoup4
+numpy
+pandas
+joblib
+python-dotenv
+groq
+jinja2

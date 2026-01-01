@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Material Wise — MCP Agent (AgentApp)</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Material Wise — MCP Agent</h1>
+    <form id="queryForm">
+      <label for="category">Select category</label>
+      <select id="category" name="category"></select>
+      <label for="product">Select product</label>
+      <select id="product" name="product"></select>
+      <button type="submit">Analyze</button>
+    </form>
+
+    <div id="result" class="card" style="display:none"></div>
+  </div>
+
+  <script>
+  // Populate categories and products dynamically
+  let categories = {};
+  fetch('/api/categories')
+    .then(res => res.json())
+    .then(data => {
+      categories = data;
+      const catSelect = document.getElementById('category');
+      catSelect.innerHTML = '<option value="">Select Category</option>';
+      Object.keys(categories.buildersmart).forEach(cat => {
+        catSelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+      });
+      catSelect.addEventListener('change', function() {
+        const prodSelect = document.getElementById('product');
+        prodSelect.innerHTML = '<option value="">Select Product</option>';
+        const prods = categories.buildersmart[this.value] || [];
+        prods.forEach(prod => {
+          prodSelect.innerHTML += `<option value="${prod}">${prod}</option>`;
+        });
+      });
+    });
+
+  document.getElementById('queryForm').addEventListener('submit', async function(e){
+    e.preventDefault();
+    const product = document.getElementById('product').value;
+    const resDiv = document.getElementById('result');
+    resDiv.style.display='block';
+    resDiv.innerText = 'Loading...';
+
+    const resp = await fetch('/api/predict', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({product})
+    });
+    const data = await resp.json();
+    if (data.error){ resDiv.innerText = data.error; return }
+
+    let html = `<h2>${data.product}</h2>`;
+    html += `<p><strong>Trend:</strong> ${data.trend} (${(data.trend_prob*100).toFixed(0)}%)</p>`;
+    html += `<p><strong>Confidence:</strong> ${data.confidence.label} (${data.confidence.score})</p>`;
+    html += `<p><strong>Climate Risk:</strong> ${data.climate.label}</p>`;
+
+    if (data.market.status==='available'){
+      html += `<p><strong>Market median:</strong> ₹${data.market.median}</p>`;
+      html += '<p><strong>Sources:</strong><ul>';
+      for (let s of data.market.sources){ html += `<li><a href="${s.source_url}" target="_blank">${s.label}</a></li>` }
+      html += '</ul></p>';
+    } else {
+      html += `<p><strong>Market:</strong> Unavailable — ${data.market.reason}</p>`;
+      html += '<p><strong>Source attempts:</strong><ul>';
+      for (let e of data.evidence){ html += `<li>${e.label} — <a href="${e.source_url}" target="_blank">link</a></li>` }
+      html += '</ul></p>';
+    }
+
+    // LLM output may be structured {structured, summary} or a plain string
+    if (data.llm && typeof data.llm === 'object'){
+      if (data.llm.summary){ html += `<h3>Quick summary</h3><p>${data.llm.summary.replace(/\n/g,'<br/>')}</p>` }
+      if (data.llm.structured){ html += `<h4>Structured explanation</h4><pre class="llm">${data.llm.structured}</pre>` }
+    } else {
+      html += `<pre class="llm">${data.llm}</pre>`;
+    }
+    resDiv.innerHTML = html;
+  })
+  </script>
+</body>
+</html>
