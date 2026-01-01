@@ -31,16 +31,17 @@
     <span class="badge">{{ result.climate }} climate risk</span>
   </div>
 
-  <h3>Market Price (Indicative)</h3>
-  {% if result.market %}
-    <p>
-      {{ result.market.unit }} :
-      ₹{{ result.market.min }} – ₹{{ result.market.max }}
-      (Median ₹{{ result.market.median }})
-    </p>
-  {% else %}
-    <p class="muted">Market price unavailable</p>
-  {% endif %}
+ <h3>Market Price (Indicative)</h3>
+
+{% if result.market.available %}
+  <p>{{ result.market.text }}</p>
+  <p class="muted">
+    Search term used: <strong>{{ result.market.search_term }}</strong>
+  </p>
+{% else %}
+  <p class="muted">Price unavailable: {{ result.market.text }}</p>
+{% endif %}
+
 
   <h3>AI Recommendation</h3>
   <pre>{{ result.explanation }}</pre>

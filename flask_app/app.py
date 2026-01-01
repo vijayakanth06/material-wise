@@ -5,7 +5,7 @@ import pandas as pd
 from services.features import build_latest_features
 from services.predictor import predict_trend
 from services.climate import rainfall_risk_tn
-from services.scraper import scrape_indiamart_prices
+from services.scraper import scrape_buildersmart_prices
 from services.confidence import confidence_score
 from services.llm import llm_reasoning
 
@@ -66,16 +66,22 @@ def index():
         trend, model_prob = predict_trend(X_latest)
         climate_score, climate_label = rainfall_risk_tn()
 
-        market = scrape_indiamart_prices(product)
-
-        market_text = "Market price data unavailable"
-        market_variance = 0.6  # penalize confidence by default
+        market = scrape_buildersmart_prices(product)
 
         if market["status"] == "available":
-            market_text = f"{market['unit']} {market['min']} – {market['max']}"
+            market_view = {
+                "available": True,
+                "text": f"{market['unit']}: ₹{market['min']} – ₹{market['max']} (Median ₹{market['median']})",
+                "source_url": market["source_url"],
+                "search_term": market["search_term"]
+            }
             market_variance = market["variance"]
         else:
-            # Penalize confidence due to lack of price transparency
+            market_view = {
+                "available": False,
+                "text": market["reason"],
+                "source_url": market["source_url"]
+            }
             market_variance = 0.6
 
         conf_score, conf_label = confidence_score(
@@ -91,7 +97,7 @@ def index():
             "confidence": conf_label,
             "climate": climate_label,
             "market_status": market["status"],
-            "market_text": market_text
+            "market_text": market_view["text"]
         })
 
 
@@ -100,10 +106,10 @@ def index():
             "trend": trend,
             "confidence": conf_label,
             "climate": climate_label,
-            "market": market,
+            "market": market_view,
             "explanation": explanation,
-            "sources": build_sources(product)
         }
+
 
 
     return render_template("index.html", materials=MATERIALS, result=result)
