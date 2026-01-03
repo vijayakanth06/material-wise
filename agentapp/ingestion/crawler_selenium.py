@@ -24,7 +24,15 @@ try:
 except Exception:
     EdgeChromiumDriverManager = None
 
-from agentapp.ingestion.crawler import _score_match, MATERIAL_CLASSES, BUILDERMART_CLASSES
+try:
+    from agentapp.ingestion.crawler import _score_match, MATERIAL_CLASSES, BUILDERMART_CLASSES
+except Exception:
+    # avoid hard dependency on bs4 when running standalone selenium dynamic crawl
+    def _score_match(s, tokens):
+        return 0
+
+    MATERIAL_CLASSES = []
+    BUILDERMART_CLASSES = []
 
 
 def _is_static(u: str) -> bool:
@@ -144,7 +152,7 @@ def get_driver(headless: bool = True, preferred: str = None):
     raise RuntimeError('No supported browser driver found')
 
 
-def find_best_link_for_material_selenium(material: str, site: str, driver) -> Optional[str]:
+def find_best_link_for_material_selenium(material: str, site: str, driver, verify_with_visit: bool = False) -> Optional[str]:
     q = material.replace(' ', '+')
     if site == 'buildersmart':
         url = f"https://www.buildersmart.in/catalogsearch/result?q={q}"
@@ -180,6 +188,12 @@ def find_best_link_for_material_selenium(material: str, site: str, driver) -> Op
                     continue
                 full = urljoin(url, href)
                 if _is_static(full):
+                    continue
+                # skip product-detail like links (we want category/listing pages)
+                product_indicators = ['proddetail', '/prdt/', '/product/', '/prod/', '/p/', '/item/', 'proddetail', 'catalog/product', 'ap-', '-kg-', '?pos=']
+                low_full = full.lower()
+                if any(ind in low_full for ind in product_indicators):
+                    # deprioritize product detail links
                     continue
                 p = urlparse(full)
                 if site == 'buildersmart' and 'buildersmart.in' not in (p.netloc or ''):
@@ -219,8 +233,8 @@ def find_best_link_for_material_selenium(material: str, site: str, driver) -> Op
 
                 score = score + path_boost
 
-                # if score now promising, visit the link and check for product card counts
-                if score >= 3:
+                # if score now promising, optionally visit the link and check for product card counts
+                if score >= 3 and verify_with_visit:
                     try:
                         driver.get(full)
                         WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
@@ -258,14 +272,16 @@ def find_best_link_for_material_selenium(material: str, site: str, driver) -> Op
                         if score > best[1]:
                             best = (full, score)
                     visits += 1
+                else:
+                    # not visiting; rely on path/text scoring
+                    if score > best[1]:
+                        best = (full, score)
             except Exception:
                 continue
 
         # if no visited candidate returned, pick the best-scoring candidate
         if best[0]:
             return best[0]
-            except Exception:
-                continue
 
         # as fallback, try to parse page source for obvious category URL patterns
         src = driver.page_source
@@ -296,7 +312,251 @@ def crawl_material_links_selenium(materials: List[str], sites: List[str] = None,
         for m in materials:
             out[m] = {}
             for s in sites:
-                out[m][s] = find_best_link_for_material_selenium(m, s, driver)
+                out[m][s] = find_best_link_for_material_selenium(m, s, driver, verify_with_visit=True)
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+    return out
+
+
+def crawl_material_links_deep(materials: List[str], sites: List[str] = None, headless: bool = True,
+                             max_pages_per_material: int = 40, max_depth: int = 2, max_results: int = 20) -> Dict[str, Dict[str, List[str]]]:
+    """Deep BFS crawl per material+site. Returns multiple candidate category/listing links per material and site.
+
+    - max_pages_per_material: how many pages to visit per material per site
+    - max_depth: link-follow depth from initial search page
+    - max_results: maximum number of links returned per material/site
+    """
+    if sites is None:
+        sites = ['buildersmart', 'indiamart']
+
+    driver = get_driver(headless=headless)
+    out: Dict[str, Dict[str, List[str]]] = {}
+
+    # selectors and heuristics
+    prod_selectors = [
+        "//*[contains(@class,'product')]",
+        "//*[contains(@class,'product-item')]",
+        "//*[contains(@class,'product-list')]",
+        "//*[contains(@class,'search-result')]",
+        "//*[contains(@class,'listing')]",
+        "//ul[contains(@class,'products')]/li",
+        "//div[contains(@class,'prod')]",
+    ]
+    product_indicators = ['proddetail', '/prdt/', '/product/', '/prod/', '/p/', '/item/', 'catalog/product', 'ap-', '-kg-', '?pos=']
+    category_tokens = ['catalogsearch', 'catalog', 'category', 'products', 'buy', 'shop', 'list', 'tmt-steel', 'cement', 'bricks', 'plumbing', 'electrical', 'impcat']
+
+    try:
+        for material in materials:
+            tokens = [t.lower() for t in material.split()]
+            out[material] = {}
+            for site in sites:
+                # initial search URL
+                q = material.replace(' ', '+')
+                if site == 'buildersmart':
+                    start_url = f"https://www.buildersmart.in/catalogsearch/result?q={q}"
+                elif site == 'indiamart':
+                    start_url = f"https://dir.indiamart.com/search.mp?ss={q}"
+                else:
+                    out[material][site] = []
+                    continue
+
+                visited = set()
+                queue = [(start_url, 0)]
+                candidates: Dict[str, float] = {}
+                pages_visited = 0
+
+                base_netloc = urlparse(start_url).netloc
+
+                while queue and pages_visited < max_pages_per_material:
+                    url, depth = queue.pop(0)
+                    if url in visited:
+                        continue
+                    try:
+                        driver.get(url)
+                        WebDriverWait(driver, 6).until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
+                        time.sleep(0.4)
+                        visited.add(url)
+                        pages_visited += 1
+
+                        # compute product-like element count
+                        prod_count = 0
+                        for sel in prod_selectors:
+                            try:
+                                els = driver.find_elements(By.XPATH, sel)
+                                if els:
+                                    prod_count = max(prod_count, len(els))
+                            except Exception:
+                                continue
+
+                        # scoring: product count, path tokens, text match
+                        path = urlparse(url).path.lower()
+                        score = prod_count * 5
+                        for tok in category_tokens:
+                            if tok in url.lower() or tok in path:
+                                score += 3
+                        page_text = (driver.find_element(By.TAG_NAME, 'body').text or '').lower()
+                        for t in tokens:
+                            if t in page_text:
+                                score += 1
+
+                        # if page looks like a listing/category, add to candidates
+                        if prod_count >= 2 or any(tok in url.lower() for tok in category_tokens) or score >= 3:
+                            candidates[url] = max(candidates.get(url, 0), score)
+
+                        # extract links for BFS if depth allows
+                        if depth < max_depth:
+                            elems = driver.find_elements(By.XPATH, "//a | //*[@onclick] | //*[@data-href] | //*[@data-url] | //*[@data-link]")
+                            for el in elems:
+                                try:
+                                    href = el.get_attribute('href') or el.get_attribute('data-href') or el.get_attribute('data-url') or el.get_attribute('data-link') or ''
+                                    if not href:
+                                        onclick = el.get_attribute('onclick')
+                                        if onclick and 'http' in onclick:
+                                            import re
+                                            m = re.search(r"(https?://[\w\-./?=&%]+)", onclick)
+                                            href = m.group(1) if m else ''
+                                    if not href:
+                                        continue
+                                    full = urljoin(url, href)
+                                    if _is_static(full):
+                                        continue
+                                    if urlparse(full).netloc != base_netloc:
+                                        continue
+                                    low_full = full.lower()
+                                    if any(ind in low_full for ind in product_indicators):
+                                        # still follow if path contains category tokens
+                                        if not any(tok in low_full for tok in category_tokens):
+                                            continue
+                                    if full not in visited:
+                                        queue.append((full, depth + 1))
+                                except Exception:
+                                    continue
+                    except Exception:
+                        continue
+
+                # sort candidates by score and return top-k
+                sorted_cands = sorted(candidates.items(), key=lambda x: x[1], reverse=True)
+                final = [u for u, s in sorted_cands[:max_results]]
+                out[material][site] = final
+
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+    return out
+
+
+def dynamic_crawl_seeds(seeds: List[str], headless: bool = True, verify_with_visit: bool = True, max_links_per_seed: int = 20) -> Dict[str, List[str]]:
+    """Given a list of seed URLs, render each and extract candidate category/listing links from the same domain.
+
+    Returns a mapping from seed -> list of discovered links (filtered, deduped).
+    """
+    driver = get_driver(headless=headless)
+    out: Dict[str, List[str]] = {}
+    product_indicators = ['proddetail', '/prdt/', '/product/', '/prod/', '/p/', '/item/', 'catalog/product', 'ap-', '-kg-', '?pos=']
+    category_tokens = ['catalogsearch', 'catalog', 'category', 'products', 'buy', 'shop', 'list', 'tmt-steel', 'cement', 'bricks', 'plumbing', 'electrical']
+    prod_selectors = [
+        "//*[contains(@class,'product')]",
+        "//*[contains(@class,'product-item')]",
+        "//*[contains(@class,'product-list')]",
+        "//*[contains(@class,'search-result')]",
+        "//*[contains(@class,'listing')]",
+        "//ul[contains(@class,'products')]/li",
+        "//div[contains(@class,'prod')]",
+    ]
+
+    try:
+        for seed in seeds:
+            found = []
+            try:
+                driver.get(seed)
+                WebDriverWait(driver, 8).until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
+                time.sleep(0.5)
+                base_netloc = urlparse(seed).netloc
+
+                elems = driver.find_elements(By.XPATH, "//a | //*[@onclick] | //*[@data-href] | //*[@data-url] | //*[@data-link]")
+                candidates = []
+                for el in elems:
+                    try:
+                        href = el.get_attribute('href') or el.get_attribute('data-href') or el.get_attribute('data-url') or el.get_attribute('data-link') or ''
+                        text = el.text or el.get_attribute('title') or el.get_attribute('aria-label') or ''
+                        if not href:
+                            onclick = el.get_attribute('onclick')
+                            if onclick and 'http' in onclick:
+                                import re
+                                m = re.search(r"(https?://[\w\-./?=&%]+)", onclick)
+                                href = m.group(1) if m else ''
+
+                        if not href:
+                            continue
+                        full = urljoin(seed, href)
+                        if _is_static(full):
+                            continue
+                        if urlparse(full).netloc != base_netloc:
+                            continue
+                        low_full = full.lower()
+                        if any(ind in low_full for ind in product_indicators):
+                            continue
+                        # basic scoring: prefer links with category tokens or the seed tokens
+                        score = 0
+                        for tok in category_tokens:
+                            if tok in low_full:
+                                score += 4
+                        if tok := urlparse(seed).path.strip('/'):
+                            if tok and tok in low_full:
+                                score += 2
+                        candidates.append((full, score, text))
+                    except Exception:
+                        continue
+
+                # sort and optionally visit to confirm listing pages
+                candidates = sorted({c[0]: c for c in candidates}.values(), key=lambda x: x[1], reverse=True)
+                final = []
+                for full, score, text in candidates:
+                    if len(final) >= max_links_per_seed:
+                        break
+                    try:
+                        if verify_with_visit:
+                            try:
+                                driver.get(full)
+                                WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.TAG_NAME, 'body')))
+                                time.sleep(0.5)
+                                # count product-like elements
+                                count = 0
+                                for sel in prod_selectors:
+                                    els = driver.find_elements(By.XPATH, sel)
+                                    if els:
+                                        count = max(count, len(els))
+                                if count >= 2:
+                                    final.append(full)
+                                else:
+                                    # if path/token score is high, still keep
+                                    if score >= 4:
+                                        final.append(full)
+                            except Exception:
+                                if score >= 4:
+                                    final.append(full)
+                        else:
+                            final.append(full)
+                    except Exception:
+                        continue
+
+                # dedupe while preserving order
+                seen = set()
+                deduped = []
+                for u in final:
+                    if u not in seen:
+                        seen.add(u)
+                        deduped.append(u)
+
+                out[seed] = deduped
+            except Exception:
+                out[seed] = []
     finally:
         try:
             driver.quit()

@@ -1,0 +1,109 @@
+{
+  "per_file_counts": {
+    "cleaned_combined_links.json": {
+      "original": 114,
+      "kept": 114
+    },
+    "cleaned_material_linksv2.json": {
+      "original": 67,
+      "kept": 67
+    },
+    "cleaned_material_links_all_materials.json": {
+      "original": 23,
+      "kept": 23
+    },
+    "cleaned_material_links_all_materials_deep.json": {
+      "original": 26,
+      "kept": 26
+    },
+    "cleaned_material_links_dynamic.json": {
+      "original": 0,
+      "kept": 0
+    },
+    "cleaned_material_links_seleniumv1.json": {
+      "original": 0,
+      "kept": 0
+    },
+    "cleaning_report.json": {
+      "original": 39,
+      "kept": 38
+    },
+    "combined_from_cleaned_combined_links.json": {
+      "original": 114,
+      "kept": 114
+    },
+    "combined_from_cleaned_material_linksv2.json": {
+      "original": 67,
+      "kept": 67
+    },
+    "combined_from_cleaned_material_links_all_materials.json": {
+      "original": 23,
+      "kept": 23
+    },
+    "combined_from_cleaned_material_links_all_materials_deep.json": {
+      "original": 26,
+      "kept": 26
+    },
+    "combined_from_cleaned_material_links_dynamic.json": {
+      "original": 0,
+      "kept": 0
+    },
+    "combined_from_cleaned_material_links_seleniumv1.json": {
+      "original": 0,
+      "kept": 0
+    },
+    "combined_from_cleaning_report.json": {
+      "original": 38,
+      "kept": 38
+    },
+    "combined_from_material_linksv2.json": {
+      "original": 82,
+      "kept": 82
+    },
+    "combined_from_material_links_all_materials.json": {
+      "original": 23,
+      "kept": 23
+    },
+    "combined_from_material_links_all_materials_deep.json": {
+      "original": 50,
+      "kept": 50
+    },
+    "combined_from_material_links_dynamic.json": {
+      "original": 87,
+      "kept": 87
+    },
+    "combined_from_material_links_seleniumv1.json": {
+      "original": 76,
+      "kept": 76
+    },
+    "combined_links_all.json": {
+      "original": 259,
+      "kept": 259
+    },
+    "combined_links_report.json": {
+      "original": 0,
+      "kept": 0
+    },
+    "material_linksv2.json": {
+      "original": 82,
+      "kept": 82
+    },
+    "material_links_all_materials.json": {
+      "original": 23,
+      "kept": 23
+    },
+    "material_links_all_materials_deep.json": {
+      "original": 50,
+      "kept": 50
+    },
+    "material_links_dynamic.json": {
+      "original": 87,
+      "kept": 87
+    },
+    "material_links_seleniumv1.json": {
+      "original": 76,
+      "kept": 76
+    }
+  },
+  "total_unique_kept": 259
+}
