@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Visualization Test</title>
+</head>
+<body>
+    <h1>Visualization Test</h1>
+    <button onclick="testViz()">Test Visualizations</button>
+    <div id="output"></div>
+    
+    <script>
+        async function testViz() {
+            const output = document.getElementById('output');
+            output.innerHTML = '<p>Loading...</p>';
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/test-viz');
+                const data = await response.json();
+                
+                console.log('Response:', data);
+                
+                if (data.success) {
+                    let html = '<h2>Success!</h2>';
+                    html += '<p>Line graph length: ' + data.line_graph_length + '</p>';
+                    html += '<p>Bar graph length: ' + data.bar_graph_length + '</p>';
+                    html += '<p>Preview: ' + data.line_graph_preview + '</p>';
+                    
+                    html += '<h3>Line Graph:</h3>';
+                    html += '<img src="' + data.visualizations.line_graph + '" style="max-width:800px; border:2px solid blue;" />';
+                    
+                    html += '<h3>Bar Graph:</h3>';
+                    html += '<img src="' + data.visualizations.bar_graph + '" style="max-width:800px; border:2px solid green;" />';
+                    
+                    output.innerHTML = html;
+                } else {
+                    output.innerHTML = '<h2>Error:</h2><pre>' + data.error + '\n\n' + data.traceback + '</pre>';
+                }
+            } catch (e) {
+                output.innerHTML = '<h2>Fetch Error:</h2><p>' + e.message + '</p>';
+                console.error(e);
+            }
+        }
+    </script>
+</body>
+</html>

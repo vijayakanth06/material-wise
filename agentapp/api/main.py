@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from typing import List, Dict
+import logging
 
 # ensure project root imports
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -15,6 +16,8 @@ from agentapp.ingestion.scrapers import scrape_buildersmart, scrape_indiamart
 from agentapp.features import build_latest_features
 from agentapp.prediction import predict_trend
 from agentapp.reasoning.groq import groq_reasoning
+from agentapp.visualizations import create_comprehensive_visualization, create_multi_material_comparison
+from agentapp.product_matcher import find_matching_product
 from services.climate import rainfall_risk_tn
 from services.confidence import confidence_score
 from agentapp.ingestion.scrapers import get_available_categories
@@ -22,25 +25,24 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), '..', 'web', 'static')), name="static")
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), '..', 'web', 'templates'))
 
-import logging
-
-# Suppress noisy 404 access logs from uvicorn/uvicorn.access while keeping other logs
+# Suppress noisy 404 access logs from uvicorn.access while keeping other logs.
+# Use SUPPRESS_ACCESS_LOGS=0 to keep access logs.
 class Ignore404Access(logging.Filter):
     def filter(self, record):
         try:
             msg = record.getMessage()
         except Exception:
             return True
-        # uvicorn access logs look like: '"GET /path HTTP/1.1" 404 -'
+        # uvicorn access logs typically look like: '"GET /path HTTP/1.1" 404 -'
         if '"' in msg and ' 404 ' in msg:
             return False
         return True
 
-logging.getLogger('uvicorn.access').addFilter(Ignore404Access())
-# Optionally suppress all access logs (including 404s). Set SUPPRESS_ACCESS_LOGS=0 to keep them.
+logger_access = logging.getLogger('uvicorn.access')
+logger_access.addFilter(Ignore404Access())
 if os.getenv('SUPPRESS_ACCESS_LOGS', '1') == '1':
     try:
-        logging.getLogger('uvicorn.access').setLevel(logging.WARNING)
+        logger_access.setLevel(logging.WARNING)
     except Exception:
         pass
 
@@ -56,6 +58,52 @@ async def index(request: Request):
 @app.get('/api/categories')
 async def categories():
     return get_available_categories()
+
+
+@app.get('/api/test-viz')
+async def test_visualization():
+    """Test endpoint to verify visualizations work"""
+    try:
+        import pandas as pd
+        from datetime import datetime
+        
+        # Create test data
+        dates = pd.date_range(end=datetime.now(), periods=12, freq='ME')
+        df = pd.DataFrame({
+            'date': dates,
+            'price_index': [100, 102, 105, 103, 108, 110, 107, 112, 115, 113, 118, 120]
+        })
+        
+        prediction = {
+            'trend': 'UP',
+            'probability': 0.75,
+            'predicted_value': 125
+        }
+        
+        scraper_results = {
+            'buildersmart': {'status': 'available', 'median': 5300},
+            'indiamart': {'status': 'available', 'median': 5450}
+        }
+        
+        visualizations = create_comprehensive_visualization(
+            df, prediction, scraper_results, "Test Cement"
+        )
+        
+        return JSONResponse({
+            'success': True,
+            'line_graph_length': len(visualizations.get('line_graph', '')),
+            'bar_graph_length': len(visualizations.get('bar_graph', '')),
+            'line_graph_preview': visualizations.get('line_graph', '')[:100],
+            'visualizations': visualizations
+        })
+    except Exception as e:
+        import traceback
+        return JSONResponse({
+            'success': False,
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status_code=500)
+
 
 @app.post('/api/predict')
 async def predict(request: Request):
@@ -131,6 +179,54 @@ async def predict(request: Request):
 
     llm_text = groq_reasoning(reason_payload)
 
+    # 7. Generate visualizations
+    visualizations = {'line_graph': None, 'bar_graph': None}
+    try:
+        import pandas as pd
+        # Get historical data for line graph
+        df = pd.read_csv(csv_path)
+        
+        # Use improved product matching
+        mask = find_matching_product(df, product, 'comm_name')
+        
+        if mask.sum() > 0:
+            sub = df[mask]
+            index_cols = [c for c in sub.columns if c.startswith('indx')]
+            df_long = sub.melt(id_vars=['comm_name','comm_code','comm_wt'], 
+                              value_vars=index_cols,
+                              var_name='month', value_name='price_index')
+            df_long['month'] = df_long['month'].str.replace('indx','', regex=False)
+            df_long['date'] = pd.to_datetime(df_long['month'], format='%m%Y', errors='coerce')
+            df_long = df_long.dropna(subset=['date']).sort_values('date').tail(12)  # Last 12 months
+            
+            if not df_long.empty:
+                prediction_dict = {
+                    'trend': trend,
+                    'probability': prob,
+                    'predicted_value': float(X_latest['price_index'].iloc[0])
+                }
+                
+                scraper_results = {
+                    'buildersmart': b,
+                    'indiamart': im
+                }
+                
+                visualizations = create_comprehensive_visualization(
+                    df_long, prediction_dict, scraper_results, product
+                )
+            else:
+                visualizations = {'line_graph': None, 'bar_graph': None, 'error': 'No historical data available'}
+        else:
+            visualizations = {'line_graph': None, 'bar_graph': None, 'error': 'Product not found in CSV'}
+    except Exception as e:
+        import traceback
+        visualizations = {
+            'line_graph': None, 
+            'bar_graph': None, 
+            'error': f'{str(e)}',
+            'traceback': traceback.format_exc()
+        }
+
     response = {
         'product': product,
         'trend': trend,
@@ -140,12 +236,65 @@ async def predict(request: Request):
         'market': market,
         'confidence': {'score': conf_score, 'label': conf_label},
         'evidence': evidence,
-        'llm': llm_text
+        'llm': llm_text,
+        'visualizations': visualizations
     }
 
     return JSONResponse(response)
 
 
+@app.post('/api/visualize')
+async def visualize(request: Request):
+    """Generate visualizations for materials"""
+    payload = await request.json()
+    materials = payload.get('materials', [])
+    
+    if not materials:
+        return JSONResponse({'error': 'materials list required'}, status_code=400)
+    
+    csv_path = os.path.join(ROOT, 'data', 'price_index.csv')
+    results = []
+    
+    for product in materials:
+        try:
+            # Get latest features
+            X_latest = build_latest_features(csv_path, product, ['price_index', 'lag_1', 'lag_3_mean'])
+            trend, prob, _ = predict_trend(X_latest)
+            
+            # Scrape prices
+            b = scrape_buildersmart(product)
+            im = scrape_indiamart(product)
+            
+            results.append({
+                'name': product,
+                'model_price': float(X_latest['price_index'].iloc[0]),
+                'indiamart_price': im.get('median') if im.get('status') == 'available' else None,
+                'buildersmart_price': b.get('median') if b.get('status') == 'available' else None,
+                'trend': trend
+            })
+        except Exception as e:
+            results.append({
+                'name': product,
+                'model_price': None,
+                'indiamart_price': None,
+                'buildersmart_price': None,
+                'error': str(e)
+            })
+    
+    # Create multi-material comparison
+    try:
+        comparison_chart = create_multi_material_comparison(results)
+    except Exception as e:
+        comparison_chart = None
+    
+    return JSONResponse({
+        'materials': results,
+        'comparison_chart': comparison_chart
+    })
+
+
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host='127.0.0.1', port=8000, log_level='info')
+    # Control access logs via SUPPRESS_ACCESS_LOGS env var (default: '1' to suppress)
+    access_log = False if os.getenv('SUPPRESS_ACCESS_LOGS', '1') == '1' else True
+    uvicorn.run(app, host='127.0.0.1', port=8000, log_level='info', access_log=access_log)

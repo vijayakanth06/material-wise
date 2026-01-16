@@ -79,6 +79,44 @@
     } else {
       html += `<pre class="llm">${data.llm}</pre>`;
     }
+
+    // Display visualizations
+    if (data.visualizations) {
+      console.log('Visualizations data:', data.visualizations);
+      html += '<h3>Price Analysis</h3>';
+      
+      if (data.visualizations.line_graph) {
+        console.log('Line graph present, length:', data.visualizations.line_graph.length);
+        console.log('First 50 chars:', data.visualizations.line_graph.substring(0, 50));
+        html += '<div class="chart-container">';
+        html += '<h4>Price Trend</h4>';
+        html += '<img src="' + data.visualizations.line_graph + '" alt="Price Trend Line Graph" style="max-width:100%; height:auto; border:1px solid #ccc;" />';
+        html += '</div>';
+      } else {
+        console.log('No line graph data');
+        html += '<p style="color:orange;">Line graph not available</p>';
+      }
+      
+      if (data.visualizations.bar_graph) {
+        console.log('Bar graph present, length:', data.visualizations.bar_graph.length);
+        html += '<div class="chart-container">';
+        html += '<h4>Price Comparison</h4>';
+        html += '<img src="' + data.visualizations.bar_graph + '" alt="Price Comparison Bar Graph" style="max-width:100%; height:auto; border:1px solid #ccc;" />';
+        html += '</div>';
+      } else {
+        console.log('No bar graph data');
+        html += '<p style="color:orange;">Bar graph not available</p>';
+      }
+      
+      if (data.visualizations.error) {
+        html += `<p style="color:red;">Visualization error: ${data.visualizations.error}</p>`;
+        console.error('Visualization error:', data.visualizations.error);
+      }
+    } else {
+      console.log('No visualizations object in response');
+      html += '<p style="color:gray;">Visualizations not available</p>';
+    }
+
     resDiv.innerHTML = html;
   })
   </script>

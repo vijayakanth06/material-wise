@@ -1,7 +1,8 @@
 import pandas as pd
 from typing import List, Dict
+from agentapp.product_matcher import find_matching_product, MATERIAL_KEYWORDS
 
-KEYWORDS = ["steel","iron","bars","rods","alloy","metal"]
+KEYWORDS = MATERIAL_KEYWORDS  # For backward compatibility
 
 
 def build_latest_features(csv_path: str, product: str, feature_names: List[str]):
@@ -10,11 +11,8 @@ def build_latest_features(csv_path: str, product: str, feature_names: List[str])
     """
     df = pd.read_csv(csv_path)
 
-    # find matching comm_name row
-    mask = df['comm_name'].str.lower().str.contains(product.lower())
-    if mask.sum() == 0:
-        # fallback: attempt keywords
-        mask = df['comm_name'].str.lower().apply(lambda x: any(k in x for k in KEYWORDS))
+    # Use improved product matching
+    mask = find_matching_product(df, product, 'comm_name')
 
     if mask.sum() == 0:
         raise ValueError(f"No material match found for '{product}' in CSV indices.")
